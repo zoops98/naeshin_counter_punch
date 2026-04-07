@@ -131,6 +131,44 @@ textarea:focus, input:focus { outline:none; }
   letter-spacing:1px;
 }
 
+/* ── 입력 모드 탭 ── */
+.input-tab { border:none; padding:7px 16px; font-size:12px; font-weight:700; cursor:pointer; border-radius:3px 3px 0 0; transition:all 0.15s; }
+.input-tab.active { background:#c0392b; color:white; }
+.input-tab:not(.active) { background:#e8e8e8; color:#666; }
+.input-tab:not(.active):hover { background:#d8d8d8; }
+
+/* ── 이미지 드롭존 ── */
+#img-dropzone {
+  width:100%; min-height:160px;
+  border:2.5px dashed #ddd;
+  border-radius:3px;
+  background:#fafafa;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:8px; cursor:pointer;
+  transition:all 0.2s; position:relative;
+  overflow:hidden;
+}
+#img-dropzone.drag-over { border-color:#c0392b; background:#fff5f5; }
+#img-dropzone.has-image { border-style:solid; border-color:#c0392b; }
+#img-dropzone img {
+  max-width:100%; max-height:320px;
+  object-fit:contain; border-radius:2px;
+}
+#img-dropzone .dz-hint {
+  color:#bbb; font-size:13px; text-align:center; line-height:1.7;
+  pointer-events:none;
+}
+#img-dropzone .dz-icon { font-size:32px; }
+#img-remove {
+  position:absolute; top:8px; right:8px;
+  background:#c0392b; color:white; border:none;
+  border-radius:50%; width:26px; height:26px;
+  font-size:14px; display:none;
+  align-items:center; justify-content:center;
+  cursor:pointer; font-weight:900; line-height:1;
+}
+
 /* ── 인쇄 전용 ── */
 @media print {
   @page { size:A4 portrait; margin:12mm 14mm; }
@@ -189,14 +227,46 @@ textarea:focus, input:focus { outline:none; }
 
   <!-- 지문 입력 -->
   <div style="margin-bottom:16px;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-      <div style="font-size:11px;font-weight:700;color:#666;letter-spacing:1px;">영어 지문 입력</div>
+    <div style="font-size:11px;font-weight:700;color:#666;letter-spacing:1px;margin-bottom:8px;">영어 지문 입력</div>
+
+    <!-- 입력 모드 탭 -->
+    <div style="display:flex;gap:3px;margin-bottom:0;">
+      <button class="input-tab active" id="tab-text" onclick="switchInputMode('text')">📝 텍스트 입력</button>
+      <button class="input-tab" id="tab-image" onclick="switchInputMode('image')">🖼️ 이미지 입력</button>
     </div>
-    <textarea id="passage-input" placeholder="분석할 영어 지문을 여기에 붙여넣으세요... (Ctrl+Enter로 분석)"
-      style="width:100%;min-height:140px;padding:12px 14px;font-size:13.5px;line-height:1.85;border:2px solid #ddd;border-radius:3px;resize:vertical;font-family:Georgia,serif;color:#222;background:#fafafa;transition:border-color 0.2s;"
-      onfocus="this.style.borderColor='#c0392b'" onblur="this.style.borderColor='#ddd'"
-      onkeydown="if(event.ctrlKey&&event.key==='Enter')doAnalyze()"></textarea>
-    <div style="display:flex;gap:8px;margin-top:8px;">
+
+    <!-- 텍스트 입력 -->
+    <div id="input-text-wrap" style="border:1px solid #e0e0e0;border-radius:0 3px 3px 3px;padding:12px;background:#fafafa;">
+      <textarea id="passage-input" placeholder="분석할 영어 지문을 여기에 붙여넣으세요... (Ctrl+Enter로 분석)"
+        style="width:100%;min-height:130px;padding:10px 12px;font-size:13.5px;line-height:1.85;border:2px solid #ddd;border-radius:3px;resize:vertical;font-family:Georgia,serif;color:#222;background:white;transition:border-color 0.2s;"
+        onfocus="this.style.borderColor='#c0392b'" onblur="this.style.borderColor='#ddd'"
+        onkeydown="if(event.ctrlKey&&event.key==='Enter')doAnalyze()"></textarea>
+    </div>
+
+    <!-- 이미지 입력 -->
+    <div id="input-image-wrap" style="display:none;border:1px solid #e0e0e0;border-radius:0 3px 3px 3px;padding:12px;background:#fafafa;">
+      <input type="file" id="img-file-input" accept="image/*" style="display:none;" onchange="handleFileSelect(event)"/>
+      <div id="img-dropzone"
+        onclick="document.getElementById('img-file-input').click()"
+        ondragover="handleDragOver(event)"
+        ondragleave="handleDragLeave(event)"
+        ondrop="handleDrop(event)">
+        <button id="img-remove" onclick="removeImage(event)">✕</button>
+        <div id="dz-content">
+          <div class="dz-icon">🖼️</div>
+          <div class="dz-hint">
+            <strong>클릭</strong>하여 이미지 선택<br>
+            또는 <strong>드래그&드롭</strong> / <strong>Ctrl+V</strong> 붙여넣기<br>
+            <span style="font-size:11px;color:#ccc;">JPG, PNG, WEBP 등 지원</span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:#aaa;line-height:1.6;">
+        💡 교재나 시험지를 캡처(Ctrl+Shift+S 또는 스니핑 도구)한 후 여기서 Ctrl+V로 붙여넣으세요.
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:10px;">
       <button id="btn-analyze" onclick="doAnalyze()" style="background:#c0392b;color:white;border:none;padding:10px 28px;font-size:13px;font-weight:800;border-radius:3px;">🔍 분석하기</button>
       <button id="btn-clear" onclick="doClear()" style="display:none;background:#fff;color:#888;border:2px solid #ddd;padding:10px 18px;font-size:13px;font-weight:700;border-radius:3px;">초기화</button>
     </div>
@@ -265,7 +335,81 @@ const boldHTML = s => esc(s).replace(/\*\*(.*?)\*\*/g,'<strong style="color:#c03
 
 let currentResult = null;
 let currentPassage = '';
-let currentAI = 'claude';
+let currentAI = 'gemini';
+let currentInputMode = 'text';   // 'text' | 'image'
+let currentImageB64 = null;      // base64 string
+let currentImageMime = 'image/jpeg';
+
+// ── 입력 모드 전환 ────────────────────────────────────────────
+function switchInputMode(mode) {
+  currentInputMode = mode;
+  document.getElementById('input-text-wrap').style.display  = mode==='text'  ? 'block' : 'none';
+  document.getElementById('input-image-wrap').style.display = mode==='image' ? 'block' : 'none';
+  document.getElementById('tab-text').className  = 'input-tab' + (mode==='text'  ? ' active' : '');
+  document.getElementById('tab-image').className = 'input-tab' + (mode==='image' ? ' active' : '');
+}
+
+// ── 이미지 처리 ───────────────────────────────────────────────
+function setImage(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  currentImageMime = file.type || 'image/jpeg';
+  const reader = new FileReader();
+  reader.onload = e => {
+    currentImageB64 = e.target.result.split(',')[1];
+    showImagePreview(e.target.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+function showImagePreview(src) {
+  const dz   = document.getElementById('img-dropzone');
+  const dzc  = document.getElementById('dz-content');
+  const rmBtn= document.getElementById('img-remove');
+  dz.classList.add('has-image');
+  dzc.innerHTML = `<img src="${src}" alt="지문 이미지"/>`;
+  rmBtn.style.display = 'flex';
+}
+
+function removeImage(e) {
+  e.stopPropagation();
+  currentImageB64 = null;
+  const dz   = document.getElementById('img-dropzone');
+  const dzc  = document.getElementById('dz-content');
+  const rmBtn= document.getElementById('img-remove');
+  dz.classList.remove('has-image');
+  dzc.innerHTML = `<div class="dz-icon">🖼️</div>
+    <div class="dz-hint">
+      <strong>클릭</strong>하여 이미지 선택<br>
+      또는 <strong>드래그&드롭</strong> / <strong>Ctrl+V</strong> 붙여넣기<br>
+      <span style="font-size:11px;color:#ccc;">JPG, PNG, WEBP 등 지원</span>
+    </div>`;
+  rmBtn.style.display = 'none';
+  document.getElementById('img-file-input').value = '';
+}
+
+function handleFileSelect(e) { setImage(e.target.files[0]); }
+function handleDragOver(e)   { e.preventDefault(); document.getElementById('img-dropzone').classList.add('drag-over'); }
+function handleDragLeave(e)  { document.getElementById('img-dropzone').classList.remove('drag-over'); }
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('img-dropzone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  setImage(file);
+}
+
+// Ctrl+V 전역 paste 감지 (이미지 모드일 때)
+document.addEventListener('paste', e => {
+  if (currentInputMode !== 'image') return;
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      setImage(file);
+      break;
+    }
+  }
+});
 
 // ── 결과 HTML 빌더 (화면 & 저장 & 인쇄 공통) ─────────────────
 function buildResultHTML(r, passage) {
@@ -440,6 +584,25 @@ async function callGemini(passage, key) {
   if (!text) throw new Error('Gemini 빈 응답.');
   return text;
 }
+async function callGeminiImage(b64, mime, key) {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${key}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      system_instruction:{ parts:[{ text: SYSTEM_PROMPT }] },
+      contents:[{ parts:[
+        { inline_data:{ mime_type: mime, data: b64 } },
+        { text: 'This image contains an English passage. Please read the text in the image carefully and analyze the English passage following the instructions.' }
+      ]}],
+      generationConfig:{ maxOutputTokens:4096 }
+    })
+  });
+  if (!res.ok) { const e=await res.json().catch(()=>{}); throw new Error('Gemini 오류 ('+res.status+'): '+(e?.error?.message||res.statusText)); }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Gemini 이미지 분석 빈 응답. 이미지에 영어 텍스트가 있는지 확인해 주세요.');
+  return text;
+}
+
 async function callGPT(passage, key) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method:'POST',
@@ -461,26 +624,40 @@ function parseJSON(raw) {
 
 // ── 분석 실행 ─────────────────────────────────────────────────
 async function doAnalyze() {
-  const passage = document.getElementById('passage-input').value.trim();
-  const ai      = 'gemini';
-  const key     = document.getElementById('key-gemini').value.trim();
-  if (!passage) { showError('지문을 입력해 주세요.'); return; }
-  if (!key)     { showError('Gemini API 키를 먼저 입력해 주세요.'); return; }
+  const key = document.getElementById('key-gemini').value.trim();
+  if (!key) { showError('Gemini API 키를 먼저 입력해 주세요.'); return; }
 
-  currentAI = ai; currentPassage = passage;
-  setLoading(true);
-  try {
-    let raw;
-    if      (ai==='claude') raw = await callClaude(passage, key);
-    else if (ai==='gemini') raw = await callGemini(passage, key);
-    else                    raw = await callGPT(passage, key);
-    currentResult = parseJSON(raw);
-    renderResult(currentResult, passage);
-  } catch(e) {
-    console.error(e);
-    showError(e.message || '알 수 없는 오류가 발생했습니다.');
-  } finally {
-    setLoading(false);
+  if (currentInputMode === 'image') {
+    // 이미지 모드
+    if (!currentImageB64) { showError('분석할 이미지를 먼저 업로드하거나 붙여넣기 해주세요.'); return; }
+    currentPassage = '[이미지에서 추출된 지문]';
+    setLoading(true);
+    try {
+      const raw = await callGeminiImage(currentImageB64, currentImageMime, key);
+      currentResult = parseJSON(raw);
+      renderResult(currentResult, currentPassage);
+    } catch(e) {
+      console.error(e);
+      showError(e.message || '알 수 없는 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  } else {
+    // 텍스트 모드
+    const passage = document.getElementById('passage-input').value.trim();
+    if (!passage) { showError('지문을 입력해 주세요.'); return; }
+    currentPassage = passage;
+    setLoading(true);
+    try {
+      const raw = await callGemini(passage, key);
+      currentResult = parseJSON(raw);
+      renderResult(currentResult, passage);
+    } catch(e) {
+      console.error(e);
+      showError(e.message || '알 수 없는 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
   }
 }
 
@@ -498,6 +675,8 @@ function doClear() {
   document.getElementById('btn-clear').style.display = 'none';
   document.getElementById('error-box').style.display = 'none';
   currentResult = null; currentPassage = '';
+  // 이미지도 초기화
+  if (currentImageB64) removeImage({ stopPropagation:()=>{} });
 }
 function setLoading(on) {
   document.getElementById('loading-box').style.display = on ? 'block' : 'none';
