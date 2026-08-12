@@ -573,8 +573,8 @@ async function callClaude(passage, key) {
   return (data.content||[]).map(b=>b.text||'').join('');
 }
 async function callGemini(passage, key) {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent', {
+    method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':key.trim()},
     body: JSON.stringify({ system_instruction:{parts:[{text:SYSTEM_PROMPT}]}, contents:[{parts:[{text:'Analyze:\n\n'+passage}]}], generationConfig:{maxOutputTokens:4096} })
   });
   if (!res.ok) { const e=await res.json().catch(()=>{}); throw new Error('Gemini 오류 ('+res.status+'): '+(e?.error?.message||res.statusText)); }
@@ -584,8 +584,8 @@ async function callGemini(passage, key) {
   return text;
 }
 async function callGeminiImage(b64, mime, key) {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent', {
+    method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':key.trim()},
     body: JSON.stringify({
       system_instruction:{ parts:[{ text: SYSTEM_PROMPT }] },
       contents:[{ parts:[
