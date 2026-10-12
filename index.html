@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<script id="gemini-aq-compat">
+(() => {
+  const nativeFetch = window.fetch.bind(window);
+  const primaryModelPath = "/models/gemini-2.5-flash:";
+  const fallbackModelPath = "/models/gemini-3.5-flash:";
+
+  const responseNeedsFallback = async (response) => {
+    if (![400, 401, 403, 404].includes(response.status)) return false;
+    let details = "";
+    try { details = (await response.clone().text()).toLowerCase(); }
+    catch (_) { return response.status === 404; }
+    if (details.includes("api key not valid") || details.includes("invalid api key")) return false;
+    return response.status === 404 ||
+      (details.includes("model") && /(not found|not supported|unavailable|permission|denied|access)/.test(details)) ||
+      details.includes("access_token_type_unsupported") ||
+      details.includes("api_key_service_blocked");
+  };
+
+  window.fetch = async (input, init) => {
+    const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    let url;
+    try { url = new URL(rawUrl, window.location.href); }
+    catch (_) { return nativeFetch(input, init); }
+    if (url.hostname !== "generativelanguage.googleapis.com") return nativeFetch(input, init);
+
+    const headers = new Headers(input instanceof Request ? input.headers : undefined);
+    if (init && init.headers) new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+    const queryKey = url.searchParams.get("key") || "";
+    if (queryKey && !headers.has("x-goog-api-key")) headers.set("x-goog-api-key", queryKey);
+    if (queryKey) url.searchParams.delete("key");
+    const apiKey = (headers.get("x-goog-api-key") || queryKey).trim();
+    const requestInput = input instanceof Request ? input : url.href;
+    const requestInit = { ...(init || {}), headers };
+    const requestBackup = input instanceof Request ? input.clone() : null;
+    const response = await nativeFetch(requestInput, requestInit);
+
+    if (!/^AQ\./i.test(apiKey) || !url.pathname.includes(primaryModelPath) ||
+        !(await responseNeedsFallback(response))) return response;
+
+    const fallbackUrl = url.href.replace(primaryModelPath, fallbackModelPath);
+    console.warn("AQ 형식 키의 Gemini 2.5 Flash 접근이 제한되어 Gemini 3.5 Flash로 한 번 재시도합니다.");
+    if (!requestBackup) return nativeFetch(fallbackUrl, requestInit);
+
+    const method = requestBackup.method.toUpperCase();
+    const retryInit = {
+      method, headers, mode: requestBackup.mode, credentials: requestBackup.credentials,
+      cache: requestBackup.cache, redirect: requestBackup.redirect,
+      referrer: requestBackup.referrer, referrerPolicy: requestBackup.referrerPolicy,
+      integrity: requestBackup.integrity, keepalive: requestBackup.keepalive,
+      body: method === "GET" || method === "HEAD" ? undefined : await requestBackup.arrayBuffer(),
+    };
+    return nativeFetch(fallbackUrl, retryInit);
+  };
+
+  const updateApiKeyPlaceholder = () => {
+    document.querySelectorAll('input[placeholder*="AIza"]').forEach((input) => {
+      input.placeholder = "AIza... 또는 AQ.Ab... 로 시작하는 Gemini API 키를 입력하세요";
+    });
+  };
+  document.addEventListener("DOMContentLoaded", updateApiKeyPlaceholder);
+  new MutationObserver(updateApiKeyPlaceholder).observe(document.documentElement, { childList: true, subtree: true });
+})();
+</script>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>내신 준비 최종 마무리</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+:root { --ink:#30283f; --muted:#827a90; --line:#e6e0ee; --purple:#7950b5; --purple-dark:#603995; --tint:#f1eaf9; --canvas:#f6f4f9; }
+body { font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif; background:var(--canvas); color:var(--ink); }
+button, input, textarea { font:inherit; }
+button { cursor:pointer; transition:background .15s, border-color .15s, box-shadow .15s; }
+button:disabled { cursor:default; opacity:.42; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline:3px solid #d4bfee; outline-offset:2px; }
+.topbar { min-height:88px; padding:20px 34px; display:flex; gap:24px; align-items:center; justify-content:space-between; background:#fff; border-bottom:1px solid var(--line); }
+.app-brand { font-size:25px; font-weight:850; color:var(--purple); letter-spacing:-1.2px; }
+.brand-caption { margin-top:4px; font-size:10px; color:var(--muted); letter-spacing:1.6px; }
+.topbar-tagline { font-size:13px; color:var(--muted); }
+.topbar-badge { font-size:12px; color:var(--purple); background:var(--tint); padding:9px 14px; border-radius:20px; font-weight:700; }
+.app-shell { max-width:1760px; margin:0 auto; padding:28px 40px 40px; display:grid; grid-template-columns:350px minmax(0,1fr); gap:28px; align-items:start; }
+.source-panel, .workspace-card { background:#fff; border:1px solid var(--line); border-radius:16px; box-shadow:0 2px 8px rgba(55,30,83,.035); min-width:0; }
+.source-panel { padding:24px; }
+.section-kicker { font-size:11px; color:var(--purple); font-weight:800; letter-spacing:1.4px; margin-bottom:7px; }
+.sidebar-title { font-size:19px; letter-spacing:-.4px; margin-bottom:24px; }
+.ui-panel { min-width:0; }
+.source-panel .ui-panel + .ui-panel { border-top:1px solid var(--line); margin-top:24px; padding-top:24px; }
+.panel-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:16px; }
+.panel-heading h2 { font-size:14px; font-weight:750; letter-spacing:-.3px; }
+.field-label { display:block; font-size:12px; font-weight:650; }
+.api-input, .profile-grid input, .profile-grid textarea { width:100%; min-width:0; margin-top:7px; padding:11px 12px; color:var(--ink); background:#fff; border:1px solid #ddd5e6; border-radius:8px; font-size:13px; line-height:1.5; transition:border-color .15s; }
+.api-input:hover, .profile-grid input:hover, .profile-grid textarea:hover, #passage-input:hover { border-color:#b9a7ce; }
+.api-input:focus, .profile-grid input:focus, .profile-grid textarea:focus, #passage-input:focus { border-color:var(--purple); }
+input::placeholder, textarea::placeholder { color:#aaa2b5; }
+.api-input { font-family:monospace; }
+.hint { font-size:11px; line-height:1.8; color:var(--muted); margin-top:10px; }
+.hint a { color:var(--purple); text-underline-offset:3px; }
+.key-status-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; }
+#key-status { font-size:11px; }
+.profile-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px 10px; }
+.profile-grid label { font-size:12px; font-weight:600; }
+.profile-grid .full-width { grid-column:1 / -1; }
+.profile-grid textarea { resize:vertical; min-height:70px; }
+.button { min-height:42px; padding:10px 15px; border:1px solid #e0d9e9; border-radius:8px; background:#fff; color:#594769; font-size:12px; font-weight:750; }
+.button:hover:not(:disabled) { border-color:#bca4d6; background:#faf7fe; }
+.button-small { min-height:30px; padding:5px 9px; font-size:11px; }
+.button-primary { background:var(--purple); color:#fff; border-color:var(--purple); }
+.button-primary:hover:not(:disabled) { background:var(--purple-dark); border-color:var(--purple-dark); box-shadow:0 3px 8px #7950b520; }
+.input-tabs { display:flex; gap:3px; padding:4px; background:#f3eff8; border-radius:9px; }
+.input-tab { flex:1; min-height:36px; padding:7px 8px; border:0; border-radius:6px; background:transparent; color:#8b7d9c; font-size:12px; }
+.input-tab.active { color:var(--purple-dark); background:#fff; font-weight:750; box-shadow:0 1px 4px #39214c0d; }
+.input-wrap { padding-top:14px; }
+#passage-input { width:100%; min-height:310px; padding:14px; border:1px solid #ddd5e6; border-radius:9px; resize:vertical; font-size:13px; line-height:1.85; color:#463851; }
+.batch-hint { margin:0 0 12px; }
+.batch-hint code { padding:1px 5px; border-radius:4px; background:var(--tint); color:var(--purple-dark); }
+.actions { display:flex; gap:8px; margin-top:14px; }
+#btn-analyze { flex:1; }
+#img-dropzone { min-height:230px; border:2px dashed #d7c8e8; border-radius:10px; background:#fcfaff; display:flex; align-items:center; justify-content:center; position:relative; padding:14px; cursor:pointer; }
+#img-dropzone.drag-over, #img-dropzone.has-image { border-color:var(--purple); background:var(--tint); }
+#img-dropzone.has-image { border-style:solid; }
+#img-dropzone img { max-width:100%; max-height:320px; object-fit:contain; }
+.dz-icon { font-size:30px; text-align:center; margin-bottom:8px; }
+.dz-hint { font-size:12px; color:var(--muted); text-align:center; line-height:1.8; }
+#img-remove { position:absolute; top:8px; right:8px; width:30px; height:30px; display:none; justify-content:center; align-items:center; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--purple); z-index:1; }
+.workspace { min-width:0; }
+.workspace-heading { padding:7px 0 25px; }
+.app-title { font-size:28px; letter-spacing:-1px; line-height:1.4; font-weight:800; }
+.app-subtitle { margin-top:9px; color:var(--muted); font-size:14px; line-height:1.7; }
+.workspace-card { padding:24px; }
+.status-chips { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:16px; }
+.status-chip { display:inline-block; padding:5px 9px; border-radius:6px; background:var(--tint); color:#78539e; font-size:11px; font-weight:650; }
+.workspace-notice { background:#f3eef9; border-radius:9px; padding:13px 16px; color:#776486; font-size:13px; line-height:1.7; }
+.preview-heading { border-bottom:1px solid var(--line); margin-top:18px; }
+.preview-heading h2 { display:inline-block; padding:0 3px 13px; margin-bottom:-1px; font-size:14px; font-weight:750; color:var(--purple-dark); border-bottom:3px solid var(--purple); }
+.export-bar { display:flex; flex-wrap:wrap; align-items:center; gap:9px; padding-top:18px; }
+.export-bar .output-label { margin-left:auto; color:var(--muted); font-size:11px; }
+.preview-stage { margin-top:18px; border-radius:12px; background:#eeE9f4; padding:24px; min-width:0; }
+.empty-state { min-height:540px; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:40px 16px; text-align:center; }
+.empty-icon { display:flex; align-items:center; justify-content:center; width:64px; height:76px; border:2px solid #aa8bcc; border-radius:9px; color:var(--purple); margin-bottom:27px; background:#f5f0fa; }
+.empty-icon svg { width:32px; height:40px; }
+.empty-state h3 { font-size:23px; font-weight:750; color:#514066; letter-spacing:-.6px; }
+.empty-state p { margin-top:14px; font-size:13px; color:#95849f; line-height:1.9; }
+#result-wrap { min-width:0; }
+.result-preview { min-width:0; }
+.queue-panel { margin-top:18px; padding:16px; background:#fbf9fe; border:1px solid var(--line); border-radius:10px; }
+#queue-summary { font-size:12px; margin-bottom:10px; }
+#queue-list { list-style:none; }
+.queue-item { display:flex; flex-wrap:wrap; gap:10px; padding:9px 0; border-top:1px solid var(--line); font-size:12px; }
+.queue-item span { margin-left:auto; }
+.queue-item.running { color:var(--purple); }
+.queue-item.done { color:#477866; }
+.queue-item.failed { color:#ad4d6a; }
+.queue-item p { flex-basis:100%; overflow-wrap:anywhere; line-height:1.6; }
+#error-box { display:none; margin-top:16px; border:1px solid #efd1dc; padding:14px; border-radius:8px; background:#fff4f8; color:#9b4260; font-size:13px; }
+#loading-box { display:none; padding:22px 16px; text-align:center; line-height:1.8; color:var(--purple-dark); font-size:13px; }
+.app-footer { margin-top:20px; text-align:center; font-size:11px; color:#a498af; }
+#print-zone { position:fixed; left:-10000px; top:0; width:182mm; visibility:hidden; pointer-events:none; }
+@media (min-width:1600px) { .app-shell { grid-template-columns:380px minmax(0,1fr); } .source-panel { padding:26px; } }
+@media (max-width:1000px) { .app-shell { grid-template-columns:310px minmax(0,1fr); padding:24px; gap:20px; } .source-panel, .workspace-card { padding:20px; } .topbar-tagline { display:none; } .app-title { font-size:25px; } .preview-stage { padding:16px; } .export-bar .output-label { flex-basis:100%; margin:0; } }
+@media (max-width:760px) {
+  .topbar { padding:18px 20px; min-height:80px; gap:14px; }
+  .app-brand { font-size:22px; }
+  .topbar-badge { font-size:10px; padding:7px 10px; }
+  .app-shell { display:flex; flex-direction:column; padding:20px 14px; gap:24px; }
+  .source-panel, .workspace { width:100%; }
+  .source-panel, .workspace-card { padding:20px; }
+  .workspace-heading { padding-top:0; }
+  .app-title { font-size:24px; }
+  .app-subtitle { font-size:12px; }
+  .empty-state { min-height:350px; padding:30px 8px; }
+  .empty-state h3 { font-size:20px; }
+  .preview-stage { padding:12px; }
+  .profile-grid { grid-template-columns:1fr 1fr; }
+}
+</style>
+<style id="result-styles">
+/* 결과지는 기존의 붉은색 단일 열 형식입니다. 앱 디자인과 독립적으로 유지합니다. */
+.one-page { position:relative; width:100%; max-width:182mm; aspect-ratio:182 / 276; margin:0 auto; background:#fff; box-sizing:border-box; }
+.one-page + .one-page { margin-top:24px; }
+.one-page *, .one-page *::before, .one-page *::after { box-sizing:border-box; }
+.result-root { position:absolute; top:0; left:0; width:100%; display:flex; flex-direction:column; overflow-wrap:anywhere; font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif; font-size:9pt; line-height:1.55; color:#222; background:#fff; }
+.r-body { flex:1; }
+.r-header { border-bottom:2.5px solid #c0392b; padding-bottom:6px; margin-bottom:10px; display:flex; gap:12px; justify-content:space-between; align-items:flex-end; }
+.r-header > div, .r-content { min-width:0; }
+.r-brand { font-size:7pt; font-weight:800; letter-spacing:2px; color:#c0392b; margin-bottom:2px; }
+.r-title { font-size:16pt; font-weight:900; color:#1a1a1a; letter-spacing:-.5px; }
+.r-number { font-size:13pt; font-weight:800; color:#c0392b; flex-shrink:0; }
+.r-passage { background:#f8f8f8; border-left:3px solid #c0392b; padding:8px 12px; margin-bottom:8px; font-size:9pt; color:#333; line-height:1.65; font-family:Georgia,serif; white-space:pre-wrap; }
+.r-guide { background:#fffbf0; border-left:3px solid #e67e22; padding:7px 12px; margin-bottom:8px; color:#555; line-height:1.6; }
+.r-guide-label { font-size:7pt; font-weight:800; letter-spacing:2px; color:#b45e12; margin-bottom:4px; }
+.r-summary { background:#f8f4f4; border-left:4px solid #c0392b; padding:8px 12px; margin-bottom:10px; }
+.r-summary-label { font-size:7pt; font-weight:800; letter-spacing:2.5px; color:#c0392b; margin-bottom:4px; }
+.r-secondary { color:#555; }
+.r-emphasis { color:#c0392b; font-weight:800; }
+.r-row { display:flex; gap:10px; align-items:flex-start; border-bottom:.5px solid #eee; padding-bottom:8px; margin-bottom:8px; }
+.r-row.last { border-bottom:0; padding-bottom:0; margin-bottom:0; }
+.r-label { background:#c0392b; color:#fff; font-weight:800; font-size:8pt; padding:4px 10px; letter-spacing:1px; min-width:72px; text-align:center; flex-shrink:0; line-height:1.4; }
+.r-content { padding-top:2px; flex:1; }
+.r-structure-item { display:flex; gap:7px; align-items:baseline; margin-bottom:2px; }
+.r-structure-item::before { content:'•'; color:#c0392b; }
+.r-structure-item strong { color:#c0392b; }
+.r-subject-en, .r-phrase-en { font-style:italic; }
+.r-phrase { margin-bottom:7px; }
+.r-note, .r-pos { font-size:8pt; color:#777; }
+.r-vocab-item { margin-bottom:6px; }
+.r-vocab-item > span { margin-left:5px; }
+.r-badge { display:inline-block; background:#c0392b; color:#fff; font-size:8pt; font-weight:700; padding:1px 6px; border-radius:2px; margin-right:5px; }
+.r-badge.subjective { background:#d35400; }
+.r-badge.vocab { background:#666; }
+.r-exam-group + .r-exam-group { margin-top:7px; }
+.r-footer { margin-top:10px; border-top:.5px solid #ddd; padding-top:6px; text-align:right; font-size:7pt; color:#666; }
+.r-footer-note { white-space:pre-wrap; }
+@page { size:A4 portrait; margin:10mm 14mm; }
+@media print {
+  html, body { margin:0 !important; padding:0 !important; background:#fff !important; }
+  #ui-shell { display:none !important; }
+  #print-zone { display:block !important; position:static !important; visibility:visible !important; width:182mm; }
+  .one-page { width:182mm !important; max-width:none; height:276mm !important; aspect-ratio:auto; margin:0 !important; break-inside:avoid; }
+  .one-page + .one-page { break-before:page; }
+  .result-root { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+}
+</style>
+</head>
+<body>
+
+<!-- 인쇄 전용 영역 -->
+<div id="print-zone"></div>
+
+<!-- 앱 UI -->
+<div id="ui-shell">
+  <header class="topbar">
+    <div><div class="app-brand">ZoopsBooks</div><div class="brand-caption">READING REVIEW STUDIO</div></div>
+    <p class="topbar-tagline">하나의 지문에서 시작하는, 수업을 위한 최종 정리</p>
+    <div class="topbar-badge">내신 정리 스튜디오</div>
+  </header>
+  <main class="app-shell">
+    <aside class="source-panel" aria-label="입력 및 설정">
+      <p class="section-kicker">01 · SOURCE</p><h2 class="sidebar-title">지문과 출력 정보</h2>
+    <section class="ui-panel">
+      <div class="panel-heading"><h2>출력물에 표시할 정보</h2></div>
+      <div class="profile-grid">
+        <label class="full-width">학원·학교명<input id="profile-organization" type="text" placeholder="예: 바른영어학원" oninput="saveProfile()"/></label>
+        <label>강사명<input id="profile-teacher" type="text" placeholder="예: 김영어 선생님" oninput="saveProfile()"/></label>
+        <label>연락처<input id="profile-contact" type="text" placeholder="예: 02-123-4567 / 홈페이지 주소" oninput="saveProfile()"/></label>
+        <label class="full-width">하단 안내 문구<textarea id="profile-footer" rows="2" placeholder="예: 수업 자료는 개인 학습용으로 사용해 주세요." oninput="saveProfile()"></textarea></label>
+      </div>
+      <p id="profile-status" role="status" class="hint">입력한 정보는 이 브라우저에 저장됩니다. 빈 항목은 결과지에 표시하지 않습니다.</p>
+    </section>
+  <section class="ui-panel">
+    <div class="panel-heading"><h2>영어 지문 입력</h2></div>
+    <div class="input-tabs">
+      <button class="input-tab active" id="tab-text" onclick="switchInputMode('text')">📝 텍스트 입력</button>
+      <button class="input-tab" id="tab-image" onclick="switchInputMode('image')">🖼️ 이미지 입력</button>
+    </div>
+    <div id="input-text-wrap" class="input-wrap"><p class="hint batch-hint">여러 지문은 사이에 <code>===</code>를 한 줄로 넣어 구분하세요. 첫 줄에 <strong>35번</strong>처럼 번호를 쓰면 결과지에도 표시됩니다.</p><textarea id="passage-input" aria-label="영어 지문" placeholder="35번&#10;첫 번째 영어 지문...&#10;&#10;===&#10;&#10;36번&#10;두 번째 영어 지문...&#10;&#10;한 지문만 입력해도 됩니다. Ctrl+Enter로 분석" onkeydown="if(event.ctrlKey&&event.key==='Enter')doAnalyze()"></textarea></div>
+    <div id="input-image-wrap" class="input-wrap" style="display:none;">
+      <input type="file" id="img-file-input" accept="image/*" style="display:none;" onchange="handleFileSelect(event)"/>
+      <div id="img-dropzone" role="button" tabindex="0" aria-label="지문 이미지 선택" onclick="document.getElementById('img-file-input').click()" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();document.getElementById('img-file-input').click()}" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+        <button id="img-remove" aria-label="이미지 삭제" onclick="removeImage(event)">✕</button>
+        <div id="dz-content"><div class="dz-icon">🖼️</div><div class="dz-hint"><strong>클릭</strong>하여 이미지 선택<br>또는 <strong>드래그&드롭</strong> / <strong>Ctrl+V</strong> 붙여넣기<br>JPG, PNG, WEBP 등 지원</div></div>
+      </div>
+      <p class="hint">교재나 시험지를 캡처한 후 Ctrl+V로 붙여넣으세요.</p>
+    </div>
+    <div class="actions"><button id="btn-analyze" class="button button-primary" onclick="doAnalyze()">🔍 분석하기</button><button id="btn-clear" class="button" onclick="doClear()" style="display:none;">초기화</button></div>
+  </section>
+    <section class="ui-panel">
+      <div class="panel-heading"><h2>API 키 설정</h2><button class="button button-small" onclick="toggleApiPanel()" id="toggle-btn">접기 ▲</button></div>
+      <div id="api-panel-body">
+        <div id="panel-gemini"><label class="field-label" for="key-gemini">Google Gemini API 키</label><input type="password" id="key-gemini" class="api-input" placeholder="AIza..." oninput="saveKeys()"/></div>
+        <div class="key-status-row"><div id="key-status"></div><button class="button button-small" onclick="showKey()">👁 표시/숨김</button></div>
+        <p class="hint"><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio에서 API 키 발급 ↗</a></p>
+        <p class="hint">키는 이 브라우저에 저장되며, 분석할 때 Google API 서버로 전달됩니다.</p>
+      </div>
+    </section>
+
+    </aside>
+    <section class="workspace" aria-label="학습자료 미리보기">
+      <div class="workspace-heading"><p class="section-kicker">내신 정리 스튜디오</p><h1 class="app-title">지문의 흐름을 읽고, 핵심을 정리하다.</h1><p class="app-subtitle">미리보기부터 출제 포인트까지, 지문마다 한 장으로 완성합니다.</p></div>
+      <div class="workspace-card">
+        <div class="status-chips"><span class="status-chip">A4 한 장 정리</span><span class="status-chip">여러 지문 순차 분석</span><span id="result-count" class="status-chip">아직 생성된 자료 없음</span></div>
+        <p class="workspace-notice">왼쪽에 영어 지문을 입력해 주세요. 여러 지문은 === 구분선으로 나누면 순서대로 분석합니다.</p>
+        <div class="preview-heading"><h2>학습자료 미리보기</h2></div>
+        <div class="export-bar"><button id="btn-save-html" class="button" onclick="doSaveHTML()" disabled>📄 HTML 저장</button><button id="btn-print" class="button button-primary" onclick="doPrint()" disabled>🖨️ 인쇄 / PDF</button><span class="output-label">지문마다 한 페이지로 저장</span></div>
+        <p id="export-summary" class="hint"></p><p class="hint">PDF 저장 시 A4 · 배율 100% · 머리글/바닥글 해제를 선택하세요.</p>
+  <div id="error-box" role="alert"></div>
+  <section id="queue-panel" class="ui-panel queue-panel" hidden><div class="panel-heading"><h2>지문별 진행 상태</h2><button id="btn-retry" class="button button-small" onclick="retryFailed()" hidden>실패 지문 재시도</button></div><p id="queue-summary" role="status"></p><ol id="queue-list"></ol></section>
+  <div id="loading-box" role="status"><strong id="loading-text">지문의 흐름과 출제 포인트를 정리하고 있습니다.</strong><p class="hint">잠시만 기다려 주세요.</p></div>
+
+        <div class="preview-stage">
+          <div id="empty-state" class="empty-state">
+            <div class="empty-icon" aria-hidden="true"><svg viewBox="0 0 32 40" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h15l7 7v25H5z"/><path d="M20 4v8h7M10 19h12M10 25h12M10 31h8"/></svg></div>
+            <h3>수업 자료를 준비해 볼까요?</h3><p>왼쪽에 지문을 붙여 넣고 분석하기를 눌러 주세요.<br>완성된 정리 자료를 이곳에서 확인할 수 있습니다.</p>
+          </div>
+          <section id="result-wrap" style="display:none;"><div class="result-preview"><div id="result-card-inner"></div></div></section>
+        </div>
+      </div>
+      <footer class="app-footer">ZoopsBooks · 선생님의 수업을 위한 작은 도구</footer>
+    </section>
+  </main>
+</div>
+
+<script>
+// ── 시스템 프롬프트 ────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are an expert Korean English teacher for Korean middle/high school students (내신/수능 prep).
+Analyze the English passage and return ONLY raw valid JSON — no markdown fences, no extra text.
+{
+  "passageGuide": "지문을 읽기 전 학생이 내용을 쉽게 파악할 수 있도록 돕는 한국어 안내문 (2-3문장). 번역이나 직역이 아닌, 지문의 핵심 흐름과 주제를 친근하게 소개하는 글. 예: '이 지문은 ~에 대한 이야기야. ~라는 개념을 중심으로 ~가 어떻게 ~하는지 설명하고 있어.'",
+  "briefSummary": { "en": "1-2 sentence English summary; wrap key words like **word**", "ko": "한국어 1-2문장 요약; 핵심 단어는 **단어** 형식으로 강조" },
+  "subject": { "en": "Main theme in English (one line)", "ko": "주제의 자연스러운 한국어 번역" },
+  "easySum": "10대 눈높이의 재미있고 쉬운 한국어 요약 (2-3문장, 생생한 일상 비유)",
+  "structure": [
+    { "step": "현상 제기", "desc": "설명" },
+    { "step": "구체적 예시", "desc": "설명" },
+    { "step": "일반화", "desc": "설명" },
+    { "step": "심리적 효과", "desc": "설명" },
+    { "step": "결론", "desc": "설명" }
+  ],
+  "examPoints": {
+    "objective": ["객관식 포인트 1","객관식 포인트 2","객관식 포인트 3"],
+    "subjective": ["서술형 포인트 (정답 예시 포함)"]
+  },
+  "keyPhrases": [{ "en": "key phrase", "ko": "한국어 번역", "note": "문법/표현 설명" }],
+  "vocab": [{ "word": "word", "pos": "품사", "meaning": "한국어 뜻", "synonyms": ["syn1"], "antonyms": ["ant1"] }]
+}
+Rules:
+- passageGuide: 번역 금지. 학생이 지문을 읽기 전 흐름을 잡아주는 친근한 한국어 안내문.
+- keyPhrases: 2-3개.
+- vocab: 지문에 실제 등장하는 학습 가치가 높은 어휘 6개를 기본으로 선정. 지문 속 의미와 품사를 쓰고 동의어·반의어는 해당 문맥에 타당한 경우만 제시. 유용한 어휘가 6개보다 적은 매우 짧은 지문에서는 억지로 채우지 말 것 (empty [] if none).
+- structure: 지문에 맞게 5단계 조정
+- easySum: 재미있고 생생한 10대 비유`;
+
+// ── 유틸 ──────────────────────────────────────────────────────
+const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const boldHTML = s => esc(s).replace(/\*\*(.*?)\*\*/g,'<strong class="r-emphasis">$1</strong>');
+
+// 사용자 정보는 분석 요청에 포함하지 않고 결과지에만 사용합니다.
+const PROFILE_STORAGE_KEY = 'naeshin_final_profile';
+const PROFILE_FIELDS = ['organization', 'teacher', 'contact', 'footer'];
+function getProfile() {
+  return Object.fromEntries(PROFILE_FIELDS.map(name => [name, document.getElementById('profile-' + name).value.trim()]));
+}
+function saveProfile() {
+  try {
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(getProfile()));
+    document.getElementById('profile-status').textContent = '이 브라우저에 저장했습니다. 빈 항목은 결과지에 표시하지 않습니다.';
+  } catch (_) {
+    document.getElementById('profile-status').textContent = '브라우저 저장이 제한되어 이번 화면에만 적용됩니다.';
+  }
+  if (completedJobs().length) renderResults();
+}
+function initProfile() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || '{}');
+    for (const name of PROFILE_FIELDS) {
+      if (typeof saved?.[name] === 'string') document.getElementById('profile-' + name).value = saved[name];
+    }
+  } catch (_) {
+    document.getElementById('profile-status').textContent = '저장된 정보를 불러오지 못했습니다. 입력한 정보는 이번 결과지에 적용할 수 있습니다.';
+  }
+}
+
+// 출력 영역의 실제 크기를 측정합니다. 줄바꿈까지 다시 계산하여 내용을 자르지 않습니다.
+// 이 함수는 저장 HTML에도 그대로 포함되므로 외부 변수에 의존하지 않습니다.
+function fitOnePage(scope = document, printing = false) {
+  for (const sheet of scope.querySelectorAll('.one-page')) {
+    const root = sheet.querySelector('.result-root');
+    const width = printing ? 182 * 96 / 25.4 : sheet.clientWidth;
+    const height = printing ? 276 * 96 / 25.4 : sheet.clientHeight;
+    if (!root || !width || !height) continue;
+    root.style.minHeight = '0';
+    const maxScale = Math.min(1, width / (182 * 96 / 25.4));
+    const fits = scale => {
+      root.style.zoom = scale;
+      root.style.width = (width / scale) + 'px';
+      return root.scrollHeight * scale <= height - 2 && root.scrollWidth * scale <= width + 0.5;
+    };
+    let scale = maxScale;
+    if (!fits(scale)) {
+      let low = 0;
+      let high = maxScale;
+      for (let step = 0; step < 24; step++) {
+        const middle = (low + high) / 2;
+        if (fits(middle)) low = middle;
+        else high = middle;
+      }
+      scale = low;
+    }
+    root.style.width = (width / scale) + 'px';
+    root.style.minHeight = ((height - 2) / scale) + 'px';
+    root.style.zoom = scale;
+    sheet.dataset.scale = scale.toFixed(4);
+  }
+}
+
+let analysisJobs = [];
+let isAnalyzing = false;
+let currentInputMode = 'text';   // 'text' | 'image'
+let currentImageB64 = null;      // base64 string
+let currentImageMime = 'image/jpeg';
+
+// ── 입력 모드 전환 ────────────────────────────────────────────
+function switchInputMode(mode) {
+  if (isAnalyzing) return;
+  currentInputMode = mode;
+  document.getElementById('input-text-wrap').style.display  = mode==='text'  ? 'block' : 'none';
+  document.getElementById('input-image-wrap').style.display = mode==='image' ? 'block' : 'none';
+  document.getElementById('tab-text').className  = 'input-tab' + (mode==='text'  ? ' active' : '');
+  document.getElementById('tab-image').className = 'input-tab' + (mode==='image' ? ' active' : '');
+}
+
+// ── 이미지 처리 ───────────────────────────────────────────────
+function setImage(file) {
+  if (isAnalyzing || !file || !file.type.startsWith('image/')) return;
+  currentImageMime = file.type || 'image/jpeg';
+  const reader = new FileReader();
+  reader.onload = e => {
+    currentImageB64 = e.target.result.split(',')[1];
+    showImagePreview(e.target.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+function showImagePreview(src) {
+  const dz   = document.getElementById('img-dropzone');
+  const dzc  = document.getElementById('dz-content');
+  const rmBtn= document.getElementById('img-remove');
+  dz.classList.add('has-image');
+  dzc.innerHTML = `<img src="${src}" alt="지문 이미지"/>`;
+  rmBtn.style.display = 'flex';
+}
+
+function removeImage(e) {
+  if (isAnalyzing) return;
+  e.stopPropagation();
+  currentImageB64 = null;
+  const dz   = document.getElementById('img-dropzone');
+  const dzc  = document.getElementById('dz-content');
+  const rmBtn= document.getElementById('img-remove');
+  dz.classList.remove('has-image');
+  dzc.innerHTML = `<div class="dz-icon">🖼️</div>
+    <div class="dz-hint">
+      <strong>클릭</strong>하여 이미지 선택<br>
+      또는 <strong>드래그&드롭</strong> / <strong>Ctrl+V</strong> 붙여넣기<br>
+      <span style="font-size:11px;color:#ccc;">JPG, PNG, WEBP 등 지원</span>
+    </div>`;
+  rmBtn.style.display = 'none';
+  document.getElementById('img-file-input').value = '';
+}
+
+function handleFileSelect(e) { setImage(e.target.files[0]); }
+function handleDragOver(e)   { e.preventDefault(); document.getElementById('img-dropzone').classList.add('drag-over'); }
+function handleDragLeave(e)  { document.getElementById('img-dropzone').classList.remove('drag-over'); }
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('img-dropzone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  setImage(file);
+}
+
+// Ctrl+V 전역 paste 감지 (이미지 모드일 때)
+document.addEventListener('paste', e => {
+  if (currentInputMode !== 'image') return;
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      setImage(file);
+      break;
+    }
+  }
+});
+
+// ── 결과 HTML 빌더 (화면 & 저장 & 인쇄 공통) ─────────────────
+function buildResultHTML(r, passage, label = '') {
+  const profile = getProfile();
+  const footerInfo = [profile.organization, profile.teacher, profile.contact].filter(Boolean).join(' · ');
+  const row = (title, content, last = false) => `<div class="r-row${last ? ' last' : ''}"><div class="r-label">${title}</div><div class="r-content">${content}</div></div>`;
+  const structure = (r.structure || []).map(item => `<div class="r-structure-item"><div><strong>${esc(item.step)}</strong>${item.desc ? `<span class="r-secondary">(${esc(item.desc)})</span>` : ''}</div></div>`).join('');
+  const examGroup = (title, points, kind = '') => points?.length ? `<div class="r-exam-group"><span class="r-badge ${kind}">${title}</span>${points.map(p => `<div>✓ ${esc(p)}</div>`).join('')}</div>` : '';
+  const phrases = (r.keyPhrases || []).map(item => `<div class="r-phrase"><div class="r-phrase-en">• ${esc(item.en)}</div><div class="r-secondary">'${esc(item.ko)}'${item.note ? ` <span class="r-note">(${esc(item.note)})</span>` : ''}</div></div>`).join('');
+  const vocab = (r.vocab || []).map(v => `<div class="r-vocab-item"><strong>${esc(v.word)}</strong><span class="r-pos">(${esc(v.pos)})</span><span>${esc(v.meaning)}</span>${v.synonyms?.length ? `<span><span class="r-badge vocab">동의어</span>${v.synonyms.map(esc).join(', ')}</span>` : ''}${v.antonyms?.length ? `<span><span class="r-badge vocab">반의어</span>${v.antonyms.map(esc).join(', ')}</span>` : ''}</div>`).join('');
+  return `<div class="one-page"><article class="result-root">
+    <header class="r-header"><div>${profile.organization ? `<div class="r-brand">${esc(profile.organization)}</div>` : ''}<h1 class="r-title">내신 준비 최종 마무리</h1></div>${label ? `<div class="r-number">${esc(label)}</div>` : ''}</header>
+    <div class="r-body">
+      ${r.passageGuide ? `<div class="r-guide"><div class="r-guide-label">지문 미리보기</div><div>${esc(r.passageGuide)}</div></div>` : ''}
+      <div class="r-passage">${esc(passage)}</div>
+      <div class="r-summary"><div class="r-summary-label">BRIEF SUMMARY</div><div>${boldHTML(r.briefSummary?.en)}</div><div class="r-secondary">${boldHTML(r.briefSummary?.ko)}</div></div>
+      ${row('주제', `<div class="r-subject-en">▶ ${esc(r.subject?.en)}</div><div class="r-secondary">${esc(r.subject?.ko)}</div>`)}
+      ${row('쉬운 요약', esc(r.easySum))}
+      ${row('전개 방식', structure)}
+      ${row('예상 포인트', examGroup('객관식 포인트', r.examPoints?.objective) + examGroup('서술형 포인트', r.examPoints?.subjective, 'subjective'))}
+      ${row('주요 구문', phrases)}
+      ${row('핵심 어휘 정리', vocab, true)}
+    </div>
+    ${footerInfo || profile.footer ? `<footer class="r-footer">${footerInfo ? `<div>${esc(footerInfo)}</div>` : ''}${profile.footer ? `<div class="r-footer-note">${esc(profile.footer)}</div>` : ''}</footer>` : ''}
+  </article></div>`;
+}
+
+function completedJobs() { return analysisJobs.filter(job => job.status === 'done'); }
+function buildAllResultsHTML() {
+  return completedJobs().map(job => buildResultHTML(job.result, job.passage, job.label)).join('');
+}
+
+// ── API 패널 토글 ─────────────────────────────────────────────
+function toggleApiPanel() {
+  const body = document.getElementById('api-panel-body');
+  const btn  = document.getElementById('toggle-btn');
+  body.style.display = body.style.display==='none' ? 'block' : 'none';
+  btn.textContent    = body.style.display==='none' ? '펼치기 ▼' : '접기 ▲';
+}
+
+// ── 탭 전환 ──────────────────────────────────────────────────
+function switchTab(ai) {
+  updateKeyStatus('gemini');
+}
+
+// ── 키 저장/복원 ──────────────────────────────────────────────
+function saveKeys() {
+  const inp = document.getElementById('key-gemini');
+  if (inp?.value) localStorage.setItem('zoops_key_gemini', inp.value);
+  else            localStorage.removeItem('zoops_key_gemini');
+  updateKeyStatus('gemini');
+}
+function updateKeyStatus(ai) {
+  const key = document.getElementById('key-gemini')?.value || '';
+  const el  = document.getElementById('key-status');
+  if (el) el.textContent = key ? '✅ 키 입력됨' : '❌ 키 없음';
+}
+function showKey() {
+  const inp = document.getElementById('key-gemini');
+  if (inp) inp.type = inp.type==='password' ? 'text' : 'password';
+}
+function initKeys() {
+  let saved = '';
+  try { saved = localStorage.getItem('zoops_key_gemini') || ''; }
+  catch (_) { /* 저장이 제한되어도 사용자 정보와 출력 기능은 초기화합니다. */ }
+  const inp   = document.getElementById('key-gemini');
+  if (saved && inp) inp.value = saved;
+  updateKeyStatus('gemini');
+}
+
+// ── API 호출 ──────────────────────────────────────────────────
+async function callClaude(passage, key) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'x-api-key':key, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:4096, system:SYSTEM_PROMPT, messages:[{role:'user',content:'Analyze:\n\n'+passage}] })
+  });
+  if (!res.ok) { const e=await res.json().catch(()=>{}); throw new Error('Claude 오류 ('+res.status+'): '+(e?.error?.message||res.statusText)); }
+  const data = await res.json();
+  if (data.stop_reason==='max_tokens') throw new Error('응답이 잘렸습니다. 지문을 짧게 줄여 주세요.');
+  return (data.content||[]).map(b=>b.text||'').join('');
+}
+async function callGemini(passage, key) {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ system_instruction:{parts:[{text:SYSTEM_PROMPT}]}, contents:[{parts:[{text:'Analyze:\n\n'+passage}]}], generationConfig:{maxOutputTokens:4096} })
+  });
+  if (!res.ok) { const e=await res.json().catch(()=>{}); throw new Error('Gemini 오류 ('+res.status+'): '+(e?.error?.message||res.statusText)); }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Gemini 빈 응답.');
+  return text;
+}
+async function callGeminiImage(b64, mime, key) {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      system_instruction:{ parts:[{ text: SYSTEM_PROMPT }] },
+      contents:[{ parts:[
+        { inline_data:{ mime_type: mime, data: b64 } },
+        { text: 'This image contains an English passage. Please read the text in the image carefully and analyze the English passage following the instructions.' }
+      ]}],
+      generationConfig:{ maxOutputTokens:4096 }
+    })
+  });
+  if (!res.ok) { const e=await res.json().catch(()=>{}); throw new Error('Gemini 오류 ('+res.status+'): '+(e?.error?.message||res.statusText)); }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Gemini 이미지 분석 빈 응답. 이미지에 영어 텍스트가 있는지 확인해 주세요.');
+  return text;
+}
+
+async function callGPT(passage, key) {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+    body: JSON.stringify({ model:'gpt-4o', max_tokens:4096, messages:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content:'Analyze:\n\n'+passage}] })
+  });
+  if (!res.ok) { const e=await res.json().catch(()=>{}); throw new Error('GPT 오류 ('+res.status+'): '+(e?.error?.message||res.statusText)); }
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('GPT 빈 응답.');
+  return text;
+}
+function parseJSON(raw) {
+  const stripped = raw.replace(/^```[\w]*\n?/m,'').replace(/```\s*$/m,'').trim();
+  const m = stripped.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('JSON 파싱 실패. 다시 시도해 주세요.');
+  return JSON.parse(m[0]);
+}
+
+// === 단독 줄로 나누고, 각 블록 첫 줄의 '35번' 같은 번호를 보존합니다.
+function parsePassages(input) {
+  const chunks = input.replace(/\r\n?/g, '\n').split(/^[ \t]*={3,}[ \t]*$/m).map(text => text.trim()).filter(Boolean);
+  return chunks.map((text, index) => {
+    const heading = text.match(/^(\d+[ \t]*번)[ \t]*(?:\n|$)/);
+    const label = heading ? heading[1].replace(/[ \t]/g, '') : chunks.length > 1 ? `지문 ${index + 1}` : '';
+    const passage = heading ? text.slice(heading[0].length).trim() : text;
+    if (!passage) throw new Error(`${label || (index + 1) + '번째 지문'}에 영어 본문이 없습니다.`);
+    return { label, passage, status:'pending', result:null, error:'' };
+  });
+}
+
+async function doAnalyze() {
+  if (isAnalyzing) return;
+  const key = document.getElementById('key-gemini').value.trim();
+  if (!key) { showError('Gemini API 키를 먼저 입력해 주세요.'); return; }
+  let jobs;
+  if (currentInputMode === 'image') {
+    if (!currentImageB64) { showError('분석할 이미지를 먼저 업로드하거나 붙여넣기 해주세요.'); return; }
+    jobs = [{ label:'', passage:'[이미지에서 추출된 지문]', image:currentImageB64, mime:currentImageMime, status:'pending', result:null, error:'' }];
+  } else {
+    try { jobs = parsePassages(document.getElementById('passage-input').value); }
+    catch (error) { showError(error.message); return; }
+    if (!jobs.length) { showError('지문을 입력해 주세요.'); return; }
+  }
+  analysisJobs = jobs;
+  renderResults();
+  await runAnalysisQueue(key);
+}
+
+async function retryFailed() {
+  if (isAnalyzing) return;
+  const key = document.getElementById('key-gemini').value.trim();
+  if (!key) { showError('Gemini API 키를 먼저 입력해 주세요.'); return; }
+  for (const job of analysisJobs) {
+    if (job.status === 'failed') { job.status = 'pending'; job.error = ''; }
+  }
+  await runAnalysisQueue(key);
+}
+
+async function runAnalysisQueue(key) {
+  isAnalyzing = true;
+  setLoading(true);
+  document.getElementById('error-box').style.display = 'none';
+  try {
+    for (let index = 0; index < analysisJobs.length; index++) {
+      const job = analysisJobs[index];
+      if (job.status !== 'pending') continue;
+      job.status = 'running';
+      updateQueueStatus();
+      document.getElementById('loading-text').textContent = `${index + 1} / ${analysisJobs.length} · ${job.label || '지문'} 분석 중입니다.`;
+      try {
+        // 이전 응답이 끝난 뒤 다음 지문을 요청하므로 동시에 요청하지 않습니다.
+        const raw = job.image ? await callGeminiImage(job.image, job.mime, key) : await callGemini(job.passage, key);
+        const result = parseJSON(raw);
+        if (!result || typeof result !== 'object' || Array.isArray(result) || !Object.keys(result).length) throw new Error('분석 응답이 비어 있습니다. 다시 시도해 주세요.');
+        buildResultHTML(result, job.passage, job.label); // 출력 가능한 응답인지 확인 후 완료 처리
+        job.result = result;
+        job.status = 'done';
+      } catch (error) {
+        job.result = null;
+        job.status = 'failed';
+        job.error = error.message || '분석 중 오류가 발생했습니다.';
+      }
+      renderResults();
+      updateQueueStatus();
+    }
+  } finally {
+    isAnalyzing = false;
+    setLoading(false);
+    updateQueueStatus();
+  }
+}
+
+function updateQueueStatus() {
+  const panel = document.getElementById('queue-panel');
+  panel.hidden = !analysisJobs.length;
+  const done = completedJobs().length;
+  const failed = analysisJobs.filter(job => job.status === 'failed').length;
+  document.getElementById('queue-summary').textContent = `전체 ${analysisJobs.length}개 · 완료 ${done}개${failed ? ` · 실패 ${failed}개` : ''}${isAnalyzing ? ' · 순차 분석 중' : ''}`;
+  const names = { pending:'대기', running:'분석 중', done:'완료', failed:'실패' };
+  document.getElementById('queue-list').innerHTML = analysisJobs.map((job, index) => `<li class="queue-item ${job.status}"><strong>${esc(job.label || `지문 ${index + 1}`)}</strong><span>${names[job.status]}</span>${job.error ? `<p>${esc(job.error)}</p>` : ''}</li>`).join('');
+  document.getElementById('btn-retry').hidden = !failed || isAnalyzing;
+  document.getElementById('export-summary').textContent = failed ? `완료된 ${done}개 지문만 저장·인쇄됩니다. 실패한 지문은 위에서 재시도할 수 있습니다.` : `완료된 ${done}개 지문을 입력 순서대로 저장·인쇄합니다. 지문당 A4 한 페이지입니다.`;
+}
+
+function renderResults() {
+  const container = document.getElementById('result-card-inner');
+  container.innerHTML = buildAllResultsHTML();
+  const count = completedJobs().length;
+  document.getElementById('result-wrap').style.display = count ? 'block' : 'none';
+  document.getElementById('empty-state').hidden = count > 0;
+  document.getElementById('empty-state').style.display = count ? 'none' : 'flex';
+  document.getElementById('result-count').textContent = count ? `${count}개 지문 완성` : '아직 생성된 자료 없음';
+  for (const id of ['btn-save-html', 'btn-print']) document.getElementById(id).disabled = isAnalyzing || !count;
+  fitOnePage(container);
+  document.getElementById('btn-clear').style.display = analysisJobs.length ? 'inline-block' : 'none';
+}
+
+function doClear() {
+  if (isAnalyzing) return;
+  document.getElementById('passage-input').value = '';
+  document.getElementById('error-box').style.display = 'none';
+  analysisJobs = [];
+  renderResults();
+  updateQueueStatus();
+  if (currentImageB64) removeImage({ stopPropagation:()=>{} });
+}
+function setLoading(on) {
+  document.getElementById('loading-box').style.display = on ? 'block' : 'none';
+  for (const id of ['btn-analyze','btn-clear','tab-text','tab-image','passage-input','img-file-input','img-remove','btn-save-html','btn-print']) document.getElementById(id).disabled = on;
+  document.getElementById('btn-analyze').textContent = on ? '⚙️ 분석 중...' : '🔍 분석하기';
+  for (const id of ['btn-save-html', 'btn-print']) document.getElementById(id).disabled = on || !completedJobs().length;
+}
+function showError(msg) {
+  const box = document.getElementById('error-box');
+  box.innerHTML = '⚠️ ' + esc(msg);
+  box.style.display = 'block';
+}
+
+// ── HTML 저장 ─────────────────────────────────────────────────
+function doSaveHTML() {
+  if (isAnalyzing || !completedJobs().length) return;
+  const inner = buildAllResultsHTML();
+  const profile = getProfile();
+  const title = [profile.organization, '내신 준비 최종 마무리'].filter(Boolean).join(' — ');
+  const full = `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>${esc(title)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#eef1f5;padding:10mm 14mm;}
+@media screen and (max-width:600px){body{padding:12px;}}
+${document.getElementById('result-styles').textContent}
+</style></head><body>${inner}
+<script>
+${fitOnePage.toString()}
+fitOnePage();
+window.addEventListener('load', () => fitOnePage());
+window.addEventListener('resize', () => fitOnePage());
+window.addEventListener('beforeprint', () => fitOnePage(document, true));
+window.addEventListener('afterprint', () => fitOnePage());
+if (document.fonts) document.fonts.ready.then(() => fitOnePage());
+<\/script></body></html>`;
+
+  const blob = new Blob([full],{type:'text/html;charset=utf-8'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href=url; a.download=(profile.organization ? profile.organization.replace(/[<>:\"/\\|?*\x00-\x1F]/g, '_') + '_' : '') + '내신_최종정리.html';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// ── 인쇄 (화면과 동일한 CSS 클래스 사용) ─────────────────────
+function doPrint() {
+  if (isAnalyzing || !completedJobs().length) return;
+  window.print();
+}
+
+// 메뉴 인쇄 / Ctrl+P에도 같은 결과지를 준비합니다.
+window.addEventListener('beforeprint', () => {
+  const zone = document.getElementById('print-zone');
+  zone.innerHTML = buildAllResultsHTML();
+  fitOnePage(zone, true);
+});
+window.addEventListener('afterprint', () => fitOnePage());
+window.addEventListener('resize', () => fitOnePage());
+
+// ── 초기화 ───────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initKeys();
+  initProfile();
+  if (document.fonts) document.fonts.ready.then(() => fitOnePage());
+});
+</script>
+</body>
+</html>
